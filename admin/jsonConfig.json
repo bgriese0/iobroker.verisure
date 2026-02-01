@@ -3,7 +3,7 @@
 	"type": "panel",
 	"items": {
 		"email": {
-			"type": "text",
+			"type": "email",
 			"label": "email",
 			"newLine": true,
 			"xs": 12,
@@ -27,6 +27,7 @@
 			"label": "pollInterval",
 			"min": 30,
 			"max": 3600,
+			"tooltip": "Polling interval in seconds (30-3600). Frequent polling may be limited by Verisure API.",
 			"newLine": true,
 			"xs": 12,
 			"sm": 12,

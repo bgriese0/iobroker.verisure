@@ -8,9 +8,14 @@ import * as utils from '@iobroker/adapter-core';
 
 import VerisureClient from 'verisure';
 
+type VerisureClientType = {
+	getToken: (code?: string) => Promise<unknown>;
+	getInstallations: () => Promise<Array<{ giid: string; client: (request: unknown) => Promise<any> }>>;
+};
+
 class Verisure extends utils.Adapter {
 	private pollTimer: ioBroker.Interval | undefined;
-	private client: any | undefined;
+	private client: VerisureClientType | undefined;
 	private refreshPromise: Promise<void> | undefined;
 
 	public constructor(options: Partial<utils.AdapterOptions> = {}) {
@@ -34,12 +39,12 @@ class Verisure extends utils.Adapter {
 			return;
 		}
 
-		this.client = new VerisureClient(this.config.email, this.config.password);
+		this.client = new VerisureClient(this.config.email, this.config.password) as unknown as VerisureClientType;
 
 		await this.syncDevices();
 
 		const intervalMs = Math.max(30, this.config.pollInterval || 300) * 1000;
-			this.pollTimer = this.setInterval(() => this.syncDevices(), intervalMs);
+		this.pollTimer = this.setInterval(() => this.syncDevices(), intervalMs);
 	}
 
 	/**
@@ -112,10 +117,18 @@ class Verisure extends utils.Adapter {
 
 		try {
 			if (!this.refreshPromise) {
-				this.refreshPromise = this.client.getToken();
+				this.refreshPromise = this.client
+					.getToken()
+					.then(() => undefined)
+					.catch((err: Error) => {
+						this.log.error(`Failed to refresh token: ${err.message}`);
+						throw err;
+					})
+					.finally(() => {
+						this.refreshPromise = undefined;
+					});
 			}
 			await this.refreshPromise;
-			this.refreshPromise = undefined;
 
 			const installations = await this.client.getInstallations();
 
@@ -131,12 +144,14 @@ class Verisure extends utils.Adapter {
 								deviceLabel
 								area
 								doorLockState
+								deviceId
 								__typename
 							}
 							cameras {
 								deviceLabel
 								area
 								isOnline
+								deviceId
 								image {
 									highResolutionUrl
 								}
@@ -151,7 +166,8 @@ class Verisure extends utils.Adapter {
 
 				if (overview.installation?.doorlocks) {
 					for (const lock of overview.installation.doorlocks) {
-						const id = `${baseId}.doorlocks.${this.sanitizeId(lock.deviceLabel)}`;
+						const uniqueKey = `${lock.deviceLabel || 'lock'}_${lock.area || 'unknown'}_${lock.deviceId || 'id'}`;
+						const id = `${baseId}.doorlocks.${this.sanitizeId(uniqueKey)}`;
 						await this.extendObjectAsync(id, {
 							type: 'state',
 							common: {
@@ -169,7 +185,8 @@ class Verisure extends utils.Adapter {
 
 				if (overview.installation?.cameras) {
 					for (const camera of overview.installation.cameras) {
-						const id = `${baseId}.cameras.${this.sanitizeId(camera.deviceLabel)}`;
+						const uniqueKey = `${camera.deviceLabel || 'camera'}_${camera.area || 'unknown'}_${camera.deviceId || 'id'}`;
+						const id = `${baseId}.cameras.${this.sanitizeId(uniqueKey)}`;
 						await this.extendObjectAsync(id, {
 							type: 'state',
 							common: {
@@ -206,8 +223,12 @@ class Verisure extends utils.Adapter {
 		}
 	}
 
-	private sanitizeId(id: string): string {
-		return id.replace(/[^a-zA-Z0-9-_]/g, '_');
+	private sanitizeId(label: string): string {
+		const sanitized = label
+			.replace(/[^a-zA-Z0-9-_]/g, '_')
+			.replace(/_+/g, '_')
+			.replace(/^_+|_+$/g, '');
+		return sanitized || 'unknown';
 	}
 }
 if (require.main !== module) {

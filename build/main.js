@@ -113,10 +113,14 @@ class Verisure extends utils.Adapter {
     if (!this.client) return;
     try {
       if (!this.refreshPromise) {
-        this.refreshPromise = this.client.getToken();
+        this.refreshPromise = this.client.getToken().then(() => void 0).catch((err) => {
+          this.log.error(`Failed to refresh token: ${err.message}`);
+          throw err;
+        }).finally(() => {
+          this.refreshPromise = void 0;
+        });
       }
       await this.refreshPromise;
-      this.refreshPromise = void 0;
       const installations = await this.client.getInstallations();
       for (const installation of installations) {
         const client = installation.client.bind(installation);
@@ -129,12 +133,14 @@ class Verisure extends utils.Adapter {
 								deviceLabel
 								area
 								doorLockState
+								deviceId
 								__typename
 							}
 							cameras {
 								deviceLabel
 								area
 								isOnline
+								deviceId
 								image {
 									highResolutionUrl
 								}
@@ -147,7 +153,8 @@ class Verisure extends utils.Adapter {
         const baseId = `installations.${installation.giid}`;
         if ((_a = overview.installation) == null ? void 0 : _a.doorlocks) {
           for (const lock of overview.installation.doorlocks) {
-            const id = `${baseId}.doorlocks.${this.sanitizeId(lock.deviceLabel)}`;
+            const uniqueKey = `${lock.deviceLabel || "lock"}_${lock.area || "unknown"}_${lock.deviceId || "id"}`;
+            const id = `${baseId}.doorlocks.${this.sanitizeId(uniqueKey)}`;
             await this.extendObjectAsync(id, {
               type: "state",
               common: {
@@ -164,7 +171,8 @@ class Verisure extends utils.Adapter {
         }
         if ((_b = overview.installation) == null ? void 0 : _b.cameras) {
           for (const camera of overview.installation.cameras) {
-            const id = `${baseId}.cameras.${this.sanitizeId(camera.deviceLabel)}`;
+            const uniqueKey = `${camera.deviceLabel || "camera"}_${camera.area || "unknown"}_${camera.deviceId || "id"}`;
+            const id = `${baseId}.cameras.${this.sanitizeId(uniqueKey)}`;
             await this.extendObjectAsync(id, {
               type: "state",
               common: {
@@ -199,8 +207,9 @@ class Verisure extends utils.Adapter {
       this.log.error(`Failed to sync devices: ${error.message}`);
     }
   }
-  sanitizeId(id) {
-    return id.replace(/[^a-zA-Z0-9-_]/g, "_");
+  sanitizeId(label) {
+    const sanitized = label.replace(/[^a-zA-Z0-9-_]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+    return sanitized || "unknown";
   }
 }
 if (require.main !== module) {
