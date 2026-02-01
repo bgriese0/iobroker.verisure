@@ -30,8 +30,7 @@ class Verisure extends utils.Adapter {
 
 		// The adapters config (in the instance object everything under the attribute "native") is accessible via
 		// this.config:
-		this.log.debug('config option1: ${this.config.option1}');
-		this.log.debug('config option2: ${this.config.option2}');
+		this.log.debug(`config username: ${this.config.username}`);
 
 		/*
 		For every state in the system there has to be also an object of type state
@@ -42,45 +41,37 @@ class Verisure extends utils.Adapter {
 		           Please refer to the state roles documentation for guidance:
 		           https://www.iobroker.net/#en/documentation/dev/stateroles.md
 		*/
-		await this.setObjectNotExistsAsync('testVariable', {
+		// Basic validation of credentials
+		if (!this.config.username || !this.config.password) {
+			this.log.warn('Please configure username and password for Verisure account');
+			return;
+		}
+
+		await this.setObjectNotExistsAsync('info.connection', {
 			type: 'state',
 			common: {
-				name: 'testVariable',
+				name: 'Connection state',
 				type: 'boolean',
-				role: 'indicator',
+				role: 'indicator.connected',
 				read: true,
-				write: true,
+				write: false,
+				def: false,
 			},
 			native: {},
 		});
 
-		// In order to get state updates, you need to subscribe to them. The following line adds a subscription for our variable we have created above.
-		this.subscribeStates('testVariable');
-		// You can also add a subscription for multiple states. The following line watches all states starting with "lights."
-		// this.subscribeStates('lights.*');
-		// Or, if you really must, you can also watch all states. Don't do this if you don't need to. Otherwise this will cause a lot of unnecessary load on the system:
-		// this.subscribeStates('*');
-
-		/*
-			setState examples
-			you will notice that each setState will cause the stateChange event to fire (because of above subscribeStates cmd)
-		*/
-		// the variable testVariable is set to true as command (ack=false)
-		await this.setState('testVariable', true);
-
-		// same thing, but the value is flagged "ack"
-		// ack should be always set to true if the value is received from or acknowledged from the target system
-		await this.setState('testVariable', { val: true, ack: true });
-
-		// same thing, but the state is deleted after 30s (getState will return null afterwards)
-		await this.setState('testVariable', { val: true, ack: true, expire: 30 });
-
-		// examples for the checkPassword/checkGroup functions
-		const pwdResult = await this.checkPasswordAsync('admin', 'iobroker');
-		this.log.info(`check user admin pw iobroker: ${JSON.stringify(pwdResult)}`);
-
-		const groupResult = await this.checkGroupAsync('admin', 'admin');
-		this.log.info(`check group user admin group admin: ${JSON.stringify(groupResult)}`);
+		try {
+			const authenticated = await this.authenticate(this.config.username, this.config.password);
+			await this.setState('info.connection', { val: authenticated, ack: true });
+			if (authenticated) {
+				this.log.info('Successfully authenticated to Verisure');
+			} else {
+				this.log.warn('Authentication to Verisure failed, please verify credentials');
+			}
+		} catch (error) {
+			this.log.error(`Failed to authenticate to Verisure: ${(error as Error).message}`);
+			await this.setState('info.connection', { val: false, ack: true });
+		}
 	}
 
 	/**
@@ -125,21 +116,21 @@ class Verisure extends utils.Adapter {
 	 * @param state - State object
 	 */
 	private onStateChange(id: string, state: ioBroker.State | null | undefined): void {
-		if (state) {
-			// The state was changed
-			this.log.info(`state ${id} changed: ${state.val} (ack = ${state.ack})`);
-
-			if (state.ack === false) {
-				// This is a command from the user (e.g., from the UI or other adapter)
-				// and should be processed by the adapter
-				this.log.info(`User command received for ${id}: ${state.val}`);
-
-				// TODO: Add your control logic here
-			}
-		} else {
-			// The object was deleted or the state value has expired
+		if (!state) {
 			this.log.info(`state ${id} deleted`);
+			return;
 		}
+		if (state.ack === false) {
+			this.log.info(`Command received for ${id}: ${state.val}`);
+			// TODO: implement command handling for Verisure actions
+		}
+	}
+
+	private async authenticate(username: string, password: string): Promise<boolean> {
+		// TODO: replace with real Verisure API call
+		this.log.debug(`Authenticating to Verisure as ${username}`);
+		// Minimal placeholder to show intent; always return false for now
+		return false;
 	}
 	// If you need to accept messages in your adapter, uncomment the following block and the corresponding line in the constructor.
 	// /**
@@ -158,6 +149,8 @@ class Verisure extends utils.Adapter {
 	// 	}
 	// }
 }
+
+export default Verisure;
 if (require.main !== module) {
 	// Export the constructor in compact mode
 	module.exports = (options: Partial<utils.AdapterOptions> | undefined) => new Verisure(options);
