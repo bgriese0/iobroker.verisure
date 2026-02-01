@@ -1,0 +1,88 @@
+{
+	"common": {
+		"name": "verisure",
+		"version": "0.0.1",
+		"news": {
+			"0.0.1": {
+				"en": "initial release",
+				"de": "Erstveröffentlichung",
+				"ru": "Начальная версия",
+				"pt": "lançamento inicial",
+				"nl": "Eerste uitgave",
+				"fr": "Première version",
+				"it": "Versione iniziale",
+				"es": "Versión inicial",
+				"pl": "Pierwsze wydanie",
+				"uk": "Початкова версія",
+				"zh-cn": "首次出版"
+			}
+		},
+		"titleLang": {
+			"en": "Verisure",
+			"de": "Verifizierung",
+			"ru": "Верисуре",
+			"pt": "Verificação",
+			"nl": "Verisure",
+			"fr": "Vérification",
+			"it": "Verifica",
+			"es": "verisure",
+			"pl": "Verisure",
+			"uk": "Verisure",
+			"zh-cn": "维里苏尔"
+		},
+		"desc": {
+			"en": "Connection to Verisure Alarm System",
+			"de": "Verbindung zum Verisure-Alarmsystem",
+			"ru": "Подключение к системе сигнализации Verisure",
+			"pt": "Conexão ao sistema de alarme Verisure",
+			"nl": "Verbinding met Verisure-alarmsysteem",
+			"fr": "Connexion au système d'alarme Verisure",
+			"it": "Collegamento al sistema di allarme Verisure",
+			"es": "Conexión al sistema de alarma Verisure",
+			"pl": "Połączenie z systemem alarmowym Verisure",
+			"uk": "Підключення до системи сигналізації Verisure",
+			"zh-cn": "连接到 Versure 报警系统"
+		},
+		"authors": [
+			"bgriese <kontakt@bjoern-griese.de>"
+		],
+		"keywords": [
+			"Versisure API Connector"
+		],
+		"licenseInformation": {
+			"type": "free",
+			"license": "GPL-3.0"
+		},
+		"platform": "Javascript/Node.js",
+		"icon": "verisure.png",
+		"enabled": true,
+		"extIcon": "https://raw.githubusercontent.com/bgriese0/ioBroker.verisure/main/admin/verisure.png",
+		"readme": "https://github.com/bgriese0/ioBroker.verisure/blob/main/README.md",
+		"loglevel": "info",
+		"tier": 3,
+		"mode": "daemon",
+		"type": "alarm",
+		"compact": true,
+		"connectionType": "cloud",
+		"dataSource": "poll",
+		"adminUI": {
+			"config": "json"
+		},
+		"dependencies": [
+			{
+				"js-controller": ">=6.0.11"
+			}
+		],
+		"globalDependencies": [
+			{
+				"admin": ">=7.0.23"
+			}
+		]
+	},
+	"native": {
+		"option1": true,
+		"option2": "42"
+	},
+	"objects": [],
+	"instanceObjects": []
+}

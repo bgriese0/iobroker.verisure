@@ -1,0 +1,43 @@
+{
+	"cli": true,
+	"target": "directory",
+	"adapterName": "verisure",
+	"title": "Verisure",
+	"description": "Connection to Verisure Alarm System",
+	"keywords": [
+		"Versisure API Connector"
+	],
+	"contributors": [
+		"Bjoern Griese"
+	],
+	"expert": "no",
+	"features": [
+		"adapter"
+	],
+	"adminFeatures": [],
+	"type": "alarm",
+	"startMode": "daemon",
+	"connectionType": "cloud",
+	"dataSource": "poll",
+	"connectionIndicator": "no",
+	"language": "TypeScript",
+	"nodeVersion": "20",
+	"adminUi": "json",
+	"tools": [
+		"ESLint"
+	],
+	"eslintConfig": "official",
+	"releaseScript": "yes",
+	"devServer": "local",
+	"indentation": "Tab",
+	"quotes": "single",
+	"authorName": "bgriese",
+	"authorGithub": "bgriese0",
+	"authorEmail": "kontakt@bjoern-griese.de",
+	"gitRemoteProtocol": "HTTPS",
+	"gitCommit": "no",
+	"defaultBranch": "main",
+	"license": "GNU GPLv3",
+	"dependabot": "yes",
+	"creatorVersion": "3.1.2"
+}
