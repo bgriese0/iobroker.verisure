@@ -10,6 +10,11 @@ import * as utils from '@iobroker/adapter-core';
 // import * as fs from 'fs';
 
 class Verisure extends utils.Adapter {
+	/**
+	 * Adapter constructor
+	 *
+	 * @param options Adapter options
+	 */
 	public constructor(options: Partial<utils.AdapterOptions> = {}) {
 		super({
 			...options,
@@ -129,7 +134,9 @@ class Verisure extends utils.Adapter {
 	private async authenticate(username: string, password: string): Promise<boolean> {
 		// TODO: replace with real Verisure API call
 		this.log.debug(`Authenticating to Verisure as ${username}`);
+		void password;
 		// Minimal placeholder to show intent; always return false for now
+		await Promise.resolve();
 		return false;
 	}
 	// If you need to accept messages in your adapter, uncomment the following block and the corresponding line in the constructor.

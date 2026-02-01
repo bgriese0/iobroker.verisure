@@ -6,13 +6,11 @@
  */
 
 import { expect } from 'chai';
-import Verisure from './main';
+import ioPackage from '../io-package.json';
 
 describe('Verisure adapter config', () => {
-	it('should expose username and password config fields', () => {
-		const adapter = new Verisure({ name: 'verisure' } as any);
-		expect(adapter).to.exist;
-		expect(adapter.config).to.have.property('username');
-		expect(adapter.config).to.have.property('password');
+	it('native config contains credentials fields', () => {
+		expect(ioPackage.native).to.have.property('username');
+		expect(ioPackage.native).to.have.property('password');
 	});
 });
