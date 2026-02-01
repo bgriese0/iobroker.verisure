@@ -2,9 +2,9 @@
 	"i18n": true,
 	"type": "panel",
 	"items": {
-		"option1": {
-			"type": "checkbox",
-			"label": "option1",
+		"email": {
+			"type": "text",
+			"label": "email",
 			"newLine": true,
 			"xs": 12,
 			"sm": 12,
@@ -12,9 +12,21 @@
 			"lg": 4,
 			"xl": 4
 		},
-		"option2": {
-			"type": "text",
-			"label": "option2",
+		"password": {
+			"type": "password",
+			"label": "password",
+			"newLine": true,
+			"xs": 12,
+			"sm": 12,
+			"md": 6,
+			"lg": 4,
+			"xl": 4
+		},
+		"pollInterval": {
+			"type": "number",
+			"label": "pollInterval",
+			"min": 30,
+			"max": 3600,
 			"newLine": true,
 			"xs": 12,
 			"sm": 12,

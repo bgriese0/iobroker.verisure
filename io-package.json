@@ -80,8 +80,9 @@
 		]
 	},
 	"native": {
-		"option1": true,
-		"option2": "42"
+		"email": "",
+		"password": "",
+		"pollInterval": 300
 	},
 	"objects": [],
 	"instanceObjects": []

@@ -6,10 +6,13 @@
 // you need to create an adapter
 import * as utils from '@iobroker/adapter-core';
 
-// Load your modules here, e.g.:
-// import * as fs from 'fs';
+import VerisureClient from 'verisure';
 
 class Verisure extends utils.Adapter {
+	private pollTimer: ioBroker.Interval | undefined;
+	private client: any | undefined;
+	private refreshPromise: Promise<void> | undefined;
+
 	public constructor(options: Partial<utils.AdapterOptions> = {}) {
 		super({
 			...options,
@@ -26,61 +29,17 @@ class Verisure extends utils.Adapter {
 	 * Is called when databases are connected and adapter received configuration.
 	 */
 	private async onReady(): Promise<void> {
-		// Initialize your adapter here
+		if (!this.config.email || !this.config.password) {
+			this.log.error('Email and password are required in adapter configuration');
+			return;
+		}
 
-		// The adapters config (in the instance object everything under the attribute "native") is accessible via
-		// this.config:
-		this.log.debug('config option1: ${this.config.option1}');
-		this.log.debug('config option2: ${this.config.option2}');
+		this.client = new VerisureClient(this.config.email, this.config.password);
 
-		/*
-		For every state in the system there has to be also an object of type state
-		Here a simple template for a boolean variable named "testVariable"
-		Because every adapter instance uses its own unique namespace variable names can't collide with other adapters variables
+		await this.syncDevices();
 
-		IMPORTANT: State roles should be chosen carefully based on the state's purpose.
-		           Please refer to the state roles documentation for guidance:
-		           https://www.iobroker.net/#en/documentation/dev/stateroles.md
-		*/
-		await this.setObjectNotExistsAsync('testVariable', {
-			type: 'state',
-			common: {
-				name: 'testVariable',
-				type: 'boolean',
-				role: 'indicator',
-				read: true,
-				write: true,
-			},
-			native: {},
-		});
-
-		// In order to get state updates, you need to subscribe to them. The following line adds a subscription for our variable we have created above.
-		this.subscribeStates('testVariable');
-		// You can also add a subscription for multiple states. The following line watches all states starting with "lights."
-		// this.subscribeStates('lights.*');
-		// Or, if you really must, you can also watch all states. Don't do this if you don't need to. Otherwise this will cause a lot of unnecessary load on the system:
-		// this.subscribeStates('*');
-
-		/*
-			setState examples
-			you will notice that each setState will cause the stateChange event to fire (because of above subscribeStates cmd)
-		*/
-		// the variable testVariable is set to true as command (ack=false)
-		await this.setState('testVariable', true);
-
-		// same thing, but the value is flagged "ack"
-		// ack should be always set to true if the value is received from or acknowledged from the target system
-		await this.setState('testVariable', { val: true, ack: true });
-
-		// same thing, but the state is deleted after 30s (getState will return null afterwards)
-		await this.setState('testVariable', { val: true, ack: true, expire: 30 });
-
-		// examples for the checkPassword/checkGroup functions
-		const pwdResult = await this.checkPasswordAsync('admin', 'iobroker');
-		this.log.info(`check user admin pw iobroker: ${JSON.stringify(pwdResult)}`);
-
-		const groupResult = await this.checkGroupAsync('admin', 'admin');
-		this.log.info(`check group user admin group admin: ${JSON.stringify(groupResult)}`);
+		const intervalMs = Math.max(30, this.config.pollInterval || 300) * 1000;
+			this.pollTimer = this.setInterval(() => this.syncDevices(), intervalMs);
 	}
 
 	/**
@@ -90,11 +49,9 @@ class Verisure extends utils.Adapter {
 	 */
 	private onUnload(callback: () => void): void {
 		try {
-			// Here you must clear all timeouts or intervals that may still be active
-			// clearTimeout(timeout1);
-			// clearTimeout(timeout2);
-			// ...
-			// clearInterval(interval1);
+			if (this.pollTimer) {
+				this.clearInterval(this.pollTimer);
+			}
 
 			callback();
 		} catch (error) {
@@ -128,14 +85,6 @@ class Verisure extends utils.Adapter {
 		if (state) {
 			// The state was changed
 			this.log.info(`state ${id} changed: ${state.val} (ack = ${state.ack})`);
-
-			if (state.ack === false) {
-				// This is a command from the user (e.g., from the UI or other adapter)
-				// and should be processed by the adapter
-				this.log.info(`User command received for ${id}: ${state.val}`);
-
-				// TODO: Add your control logic here
-			}
 		} else {
 			// The object was deleted or the state value has expired
 			this.log.info(`state ${id} deleted`);
@@ -157,6 +106,109 @@ class Verisure extends utils.Adapter {
 	// 		}
 	// 	}
 	// }
+
+	private async syncDevices(): Promise<void> {
+		if (!this.client) return;
+
+		try {
+			if (!this.refreshPromise) {
+				this.refreshPromise = this.client.getToken();
+			}
+			await this.refreshPromise;
+			this.refreshPromise = undefined;
+
+			const installations = await this.client.getInstallations();
+
+			for (const installation of installations) {
+				const client = installation.client.bind(installation);
+
+				const overview = await client({
+					operationName: 'overview',
+					variables: { giid: installation.giid },
+					query: `query overview($giid: String!) {
+						installation(giid: $giid) {
+							doorlocks {
+								deviceLabel
+								area
+								doorLockState
+								__typename
+							}
+							cameras {
+								deviceLabel
+								area
+								isOnline
+								image {
+									highResolutionUrl
+								}
+								__typename
+							}
+							__typename
+						}
+					}`,
+				});
+
+				const baseId = `installations.${installation.giid}`;
+
+				if (overview.installation?.doorlocks) {
+					for (const lock of overview.installation.doorlocks) {
+						const id = `${baseId}.doorlocks.${this.sanitizeId(lock.deviceLabel)}`;
+						await this.extendObjectAsync(id, {
+							type: 'state',
+							common: {
+								name: lock.deviceLabel,
+								type: 'string',
+								role: 'state',
+								read: true,
+								write: false,
+							},
+							native: {},
+						});
+						await this.setState(id, { val: lock.doorLockState, ack: true });
+					}
+				}
+
+				if (overview.installation?.cameras) {
+					for (const camera of overview.installation.cameras) {
+						const id = `${baseId}.cameras.${this.sanitizeId(camera.deviceLabel)}`;
+						await this.extendObjectAsync(id, {
+							type: 'state',
+							common: {
+								name: camera.deviceLabel,
+								type: 'boolean',
+								role: 'indicator.reachable',
+								read: true,
+								write: false,
+							},
+							native: {},
+						});
+						await this.setState(id, { val: !!camera.isOnline, ack: true });
+
+						if (camera.image?.highResolutionUrl) {
+							const imageId = `${id}.imageUrl`;
+							await this.extendObjectAsync(imageId, {
+								type: 'state',
+								common: {
+									name: `${camera.deviceLabel} image`,
+									type: 'string',
+									role: 'url',
+									read: true,
+									write: false,
+								},
+								native: {},
+							});
+							await this.setState(imageId, { val: camera.image.highResolutionUrl, ack: true });
+						}
+					}
+				}
+			}
+		} catch (error) {
+			this.log.error(`Failed to sync devices: ${(error as Error).message}`);
+		}
+	}
+
+	private sanitizeId(id: string): string {
+		return id.replace(/[^a-zA-Z0-9-_]/g, '_');
+	}
 }
 if (require.main !== module) {
 	// Export the constructor in compact mode
