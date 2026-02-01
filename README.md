@@ -1,4 +1,4 @@
-![Logo](admin/verisure.png)
+
 # ioBroker.verisure
 
 [![NPM version](https://img.shields.io/npm/v/iobroker.verisure.svg)](https://www.npmjs.com/package/iobroker.verisure)
