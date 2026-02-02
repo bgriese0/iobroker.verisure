@@ -22,7 +22,11 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 var utils = __toESM(require("@iobroker/adapter-core"));
+var import_verisure = __toESM(require("verisure"));
 class Verisure extends utils.Adapter {
+  pollTimer;
+  client;
+  refreshPromise;
   constructor(options = {}) {
     super({
       ...options,
@@ -36,27 +40,14 @@ class Verisure extends utils.Adapter {
    * Is called when databases are connected and adapter received configuration.
    */
   async onReady() {
-    this.log.debug("config option1: ${this.config.option1}");
-    this.log.debug("config option2: ${this.config.option2}");
-    await this.setObjectNotExistsAsync("testVariable", {
-      type: "state",
-      common: {
-        name: "testVariable",
-        type: "boolean",
-        role: "indicator",
-        read: true,
-        write: true
-      },
-      native: {}
-    });
-    this.subscribeStates("testVariable");
-    await this.setState("testVariable", true);
-    await this.setState("testVariable", { val: true, ack: true });
-    await this.setState("testVariable", { val: true, ack: true, expire: 30 });
-    const pwdResult = await this.checkPasswordAsync("admin", "iobroker");
-    this.log.info(`check user admin pw iobroker: ${JSON.stringify(pwdResult)}`);
-    const groupResult = await this.checkGroupAsync("admin", "admin");
-    this.log.info(`check group user admin group admin: ${JSON.stringify(groupResult)}`);
+    if (!this.config.email || !this.config.password) {
+      this.log.error("Email and password are required in adapter configuration");
+      return;
+    }
+    this.client = new import_verisure.default(this.config.email, this.config.password);
+    await this.syncDevices();
+    const intervalMs = Math.max(30, this.config.pollInterval || 300) * 1e3;
+    this.pollTimer = this.setInterval(() => this.syncDevices(), intervalMs);
   }
   /**
    * Is called when adapter shuts down - callback has to be called under any circumstances!
@@ -65,6 +56,9 @@ class Verisure extends utils.Adapter {
    */
   onUnload(callback) {
     try {
+      if (this.pollTimer) {
+        this.clearInterval(this.pollTimer);
+      }
       callback();
     } catch (error) {
       this.log.error(`Error during unloading: ${error.message}`);
@@ -94,9 +88,6 @@ class Verisure extends utils.Adapter {
   onStateChange(id, state) {
     if (state) {
       this.log.info(`state ${id} changed: ${state.val} (ack = ${state.ack})`);
-      if (state.ack === false) {
-        this.log.info(`User command received for ${id}: ${state.val}`);
-      }
     } else {
       this.log.info(`state ${id} deleted`);
     }
@@ -117,6 +108,109 @@ class Verisure extends utils.Adapter {
   // 		}
   // 	}
   // }
+  async syncDevices() {
+    var _a, _b, _c;
+    if (!this.client) return;
+    try {
+      if (!this.refreshPromise) {
+        this.refreshPromise = this.client.getToken().then(() => void 0).catch((err) => {
+          this.log.error(`Failed to refresh token: ${err.message}`);
+          throw err;
+        }).finally(() => {
+          this.refreshPromise = void 0;
+        });
+      }
+      await this.refreshPromise;
+      const installations = await this.client.getInstallations();
+      for (const installation of installations) {
+        const client = installation.client.bind(installation);
+        const overview = await client({
+          operationName: "overview",
+          variables: { giid: installation.giid },
+          query: `query overview($giid: String!) {
+						installation(giid: $giid) {
+							doorlocks {
+								deviceLabel
+								area
+								doorLockState
+								deviceId
+								__typename
+							}
+							cameras {
+								deviceLabel
+								area
+								isOnline
+								deviceId
+								image {
+									highResolutionUrl
+								}
+								__typename
+							}
+							__typename
+						}
+					}`
+        });
+        const baseId = `installations.${installation.giid}`;
+        if ((_a = overview.installation) == null ? void 0 : _a.doorlocks) {
+          for (const lock of overview.installation.doorlocks) {
+            const uniqueKey = `${lock.deviceLabel || "lock"}_${lock.area || "unknown"}_${lock.deviceId || "id"}`;
+            const id = `${baseId}.doorlocks.${this.sanitizeId(uniqueKey)}`;
+            await this.extendObjectAsync(id, {
+              type: "state",
+              common: {
+                name: lock.deviceLabel,
+                type: "string",
+                role: "state",
+                read: true,
+                write: false
+              },
+              native: {}
+            });
+            await this.setState(id, { val: lock.doorLockState, ack: true });
+          }
+        }
+        if ((_b = overview.installation) == null ? void 0 : _b.cameras) {
+          for (const camera of overview.installation.cameras) {
+            const uniqueKey = `${camera.deviceLabel || "camera"}_${camera.area || "unknown"}_${camera.deviceId || "id"}`;
+            const id = `${baseId}.cameras.${this.sanitizeId(uniqueKey)}`;
+            await this.extendObjectAsync(id, {
+              type: "state",
+              common: {
+                name: camera.deviceLabel,
+                type: "boolean",
+                role: "indicator.reachable",
+                read: true,
+                write: false
+              },
+              native: {}
+            });
+            await this.setState(id, { val: !!camera.isOnline, ack: true });
+            if ((_c = camera.image) == null ? void 0 : _c.highResolutionUrl) {
+              const imageId = `${id}.imageUrl`;
+              await this.extendObjectAsync(imageId, {
+                type: "state",
+                common: {
+                  name: `${camera.deviceLabel} image`,
+                  type: "string",
+                  role: "url",
+                  read: true,
+                  write: false
+                },
+                native: {}
+              });
+              await this.setState(imageId, { val: camera.image.highResolutionUrl, ack: true });
+            }
+          }
+        }
+      }
+    } catch (error) {
+      this.log.error(`Failed to sync devices: ${error.message}`);
+    }
+  }
+  sanitizeId(label) {
+    const sanitized = label.replace(/[^a-zA-Z0-9-_]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+    return sanitized || "unknown";
+  }
 }
 if (require.main !== module) {
   module.exports = (options) => new Verisure(options);

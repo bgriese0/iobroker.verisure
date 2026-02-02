@@ -80,9 +80,9 @@
 		]
 	},
 	"native": {
-		"username": "",
+		"email": "",
 		"password": "",
-		"domain": "https://mypages.verisure.com"
+		"pollInterval": 300
 	},
 	"objects": [],
 	"instanceObjects": []

@@ -4,9 +4,9 @@
 declare global {
 	namespace ioBroker {
 		interface AdapterConfig {
-			username: string;
+			email: string;
 			password: string;
-			domain?: string;
+			pollInterval: number;
 		}
 	}
 }

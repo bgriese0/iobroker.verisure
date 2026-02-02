@@ -14,10 +14,6 @@
 
 Connection to Verisure Alarm System
 
-## Configuration
-
-Provide your Verisure credentials in the adapter configuration. Optionally override the Verisure portal domain (defaults to `https://mypages.verisure.com`).
-
 ## Developer manual
 This section is intended for the developer. It can be deleted later.
 

@@ -2,9 +2,9 @@
 	"i18n": true,
 	"type": "panel",
 	"items": {
-		"username": {
-			"type": "text",
-			"label": "username",
+		"email": {
+			"type": "email",
+			"label": "email",
 			"newLine": true,
 			"xs": 12,
 			"sm": 12,
@@ -22,9 +22,12 @@
 			"lg": 4,
 			"xl": 4
 		},
-		"domain": {
-			"type": "text",
-			"label": "domain",
+		"pollInterval": {
+			"type": "number",
+			"label": "pollInterval",
+			"min": 30,
+			"max": 3600,
+			"tooltip": "Polling interval in seconds (30-3600). Frequent polling may be limited by Verisure API.",
 			"newLine": true,
 			"xs": 12,
 			"sm": 12,
