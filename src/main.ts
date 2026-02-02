@@ -6,10 +6,35 @@
 // you need to create an adapter
 import * as utils from '@iobroker/adapter-core';
 
-// Load your modules here, e.g.:
-// import * as fs from 'fs';
+import request from 'request';
+import objectAssign from 'object-assign';
+import 'es6-promise/auto';
 
 class Verisure extends utils.Adapter {
+	private verisureConfig!: {
+		username: string;
+		password: string;
+		domain: string;
+		auth_path: string;
+		alarmstatus_path: string;
+		climatedata_path: string;
+		alarmFields: string[];
+		climateFields: string[];
+	};
+	private formData: Record<string, string> = {};
+	private authenticated = false;
+	private alarmStatus: Record<string, unknown> = {};
+	private climateData: Array<Record<string, unknown>> = [];
+	private firstAlarmPoll?: Promise<unknown>;
+	private firstClimatePoll?: Promise<unknown>;
+	private alarmFetchTimeout = 30 * 1000;
+	private climateFetchTimeout = 30 * 60 * 1000;
+	private errorTimeout = 10 * 60 * 1000;
+	private listeners = {
+		climateChange: [] as Array<(data: unknown) => void>,
+		alarmChange: [] as Array<(data: unknown) => void>,
+	};
+
 	public constructor(options: Partial<utils.AdapterOptions> = {}) {
 		super({
 			...options,
@@ -26,61 +51,37 @@ class Verisure extends utils.Adapter {
 	 * Is called when databases are connected and adapter received configuration.
 	 */
 	private async onReady(): Promise<void> {
-		// Initialize your adapter here
+		if (!this.config.username || !this.config.password) {
+			this.log.error('Username and password are required for Verisure API');
+			return;
+		}
 
-		// The adapters config (in the instance object everything under the attribute "native") is accessible via
-		// this.config:
-		this.log.debug('config option1: ${this.config.option1}');
-		this.log.debug('config option2: ${this.config.option2}');
-
-		/*
-		For every state in the system there has to be also an object of type state
-		Here a simple template for a boolean variable named "testVariable"
-		Because every adapter instance uses its own unique namespace variable names can't collide with other adapters variables
-
-		IMPORTANT: State roles should be chosen carefully based on the state's purpose.
-		           Please refer to the state roles documentation for guidance:
-		           https://www.iobroker.net/#en/documentation/dev/stateroles.md
-		*/
-		await this.setObjectNotExistsAsync('testVariable', {
-			type: 'state',
-			common: {
-				name: 'testVariable',
-				type: 'boolean',
-				role: 'indicator',
-				read: true,
-				write: true,
+		this.verisureConfig = objectAssign(
+			{
+				username: '',
+				password: '',
+				domain: 'https://mypages.verisure.com',
+				auth_path: '/j_spring_security_check?locale=sv_SE',
+				alarmstatus_path: '/remotecontrol?_=',
+				climatedata_path: '/overview/climatedevice?_=',
+				alarmFields: ['status', 'date'],
+				climateFields: ['location', 'humidity', 'temperature', 'timestamp'],
 			},
-			native: {},
-		});
+			{
+				username: this.config.username,
+				password: this.config.password,
+				domain: this.config.domain || 'https://mypages.verisure.com',
+			},
+		);
 
-		// In order to get state updates, you need to subscribe to them. The following line adds a subscription for our variable we have created above.
-		this.subscribeStates('testVariable');
-		// You can also add a subscription for multiple states. The following line watches all states starting with "lights."
-		// this.subscribeStates('lights.*');
-		// Or, if you really must, you can also watch all states. Don't do this if you don't need to. Otherwise this will cause a lot of unnecessary load on the system:
-		// this.subscribeStates('*');
+		this.formData = {
+			j_username: this.verisureConfig.username,
+			j_password: this.verisureConfig.password,
+		};
 
-		/*
-			setState examples
-			you will notice that each setState will cause the stateChange event to fire (because of above subscribeStates cmd)
-		*/
-		// the variable testVariable is set to true as command (ack=false)
-		await this.setState('testVariable', true);
+		request = request.defaults({ jar: true });
 
-		// same thing, but the value is flagged "ack"
-		// ack should be always set to true if the value is received from or acknowledged from the target system
-		await this.setState('testVariable', { val: true, ack: true });
-
-		// same thing, but the state is deleted after 30s (getState will return null afterwards)
-		await this.setState('testVariable', { val: true, ack: true, expire: 30 });
-
-		// examples for the checkPassword/checkGroup functions
-		const pwdResult = await this.checkPasswordAsync('admin', 'iobroker');
-		this.log.info(`check user admin pw iobroker: ${JSON.stringify(pwdResult)}`);
-
-		const groupResult = await this.checkGroupAsync('admin', 'admin');
-		this.log.info(`check group user admin group admin: ${JSON.stringify(groupResult)}`);
+		this.engage();
 	}
 
 	/**
@@ -139,8 +140,140 @@ class Verisure extends utils.Adapter {
 		} else {
 			// The object was deleted or the state value has expired
 			this.log.info(`state ${id} deleted`);
+	}
+
+	private filterByKeys(obj: Record<string, unknown>, keysArr: string[]): Record<string, unknown> {
+		const filtered: Record<string, unknown> = {};
+		for (const key of Object.keys(obj)) {
+			if (keysArr.includes(key)) {
+				filtered[key] = obj[key];
+			}
+		}
+		return filtered;
+	}
+
+	private dispatch(service: 'climateChange' | 'alarmChange', data: unknown): void {
+		for (const listener of this.listeners[service]) {
+			listener(data);
 		}
 	}
+
+	private requestPromise(options: request.UriOptions & request.CoreOptions): Promise<any> {
+		return new Promise((resolve, reject) => {
+			request(options, (error, response, body) => {
+				if (
+					options.json &&
+					response &&
+					response.headers['content-type'] !== 'application/json;charset=UTF-8'
+				) {
+					error = { state: 'error', message: 'Expected JSON, but got html' } as any;
+				} else if (body && body.state === 'error') {
+					error = body;
+					this.authenticated = false;
+				}
+
+				if (error) {
+					reject(error);
+				} else {
+					this.authenticated = true;
+					resolve(body);
+				}
+			});
+		});
+	}
+
+	private authenticate(): Promise<boolean | unknown> {
+		const authUrl = this.verisureConfig.domain + this.verisureConfig.auth_path;
+		const requestParams = {
+			url: authUrl,
+			form: this.formData,
+			method: 'POST',
+		};
+		return this.authenticated ? Promise.resolve(true) : this.requestPromise(requestParams);
+	}
+
+	private fetchAlarmStatus(): Promise<any> {
+		const alarmstatusUrl = this.verisureConfig.domain + this.verisureConfig.alarmstatus_path + Date.now();
+		return this.requestPromise({ url: alarmstatusUrl, json: true });
+	}
+
+	private fetchClimateData(): Promise<any> {
+		const climatedataUrl = this.verisureConfig.domain + this.verisureConfig.climatedata_path + Date.now();
+		return this.requestPromise({ url: climatedataUrl, json: true });
+	}
+
+	private parseAlarmData(data: any): Promise<any> {
+		if (!Array.isArray(data) || data.length === 0) return Promise.resolve(data);
+		const filtered = this.filterByKeys(data[0], this.verisureConfig.alarmFields);
+
+		setTimeout(() => this.pollAlarmStatus(), this.alarmFetchTimeout);
+
+		if (JSON.stringify(filtered) !== JSON.stringify(this.alarmStatus)) {
+			this.alarmStatus = filtered;
+			this.dispatch('alarmChange', filtered);
+		}
+		return Promise.resolve(filtered);
+	}
+
+	private parseClimateData(data: any): Promise<any> {
+		if (!Array.isArray(data)) return Promise.resolve(data);
+		const filtered = data.map((set: Record<string, unknown>) =>
+			this.filterByKeys(set, this.verisureConfig.climateFields),
+		);
+
+		setTimeout(() => this.pollClimateData(), this.climateFetchTimeout);
+
+		if (JSON.stringify(filtered) !== JSON.stringify(this.climateData)) {
+			this.climateData = filtered;
+			this.dispatch('climateChange', filtered);
+		}
+		return Promise.resolve(filtered);
+	}
+
+	private pollAlarmStatus(): Promise<any> {
+		return this.fetchAlarmStatus().then((data) => this.parseAlarmData(data));
+	}
+
+	private pollClimateData(): Promise<any> {
+		return this.fetchClimateData().then((data) => this.parseClimateData(data));
+	}
+
+	private gotAlarmStatus(): boolean {
+		return Object.keys(this.alarmStatus).length !== 0;
+	}
+
+	private gotClimateData(): boolean {
+		return Object.keys(this.climateData).length !== 0;
+	}
+
+	private getAlarmStatus(): Promise<any> {
+		if (this.gotAlarmStatus()) {
+			return Promise.resolve(this.alarmStatus);
+		} else {
+			return this.firstAlarmPoll as Promise<any>;
+		}
+	}
+
+	private getClimateData(): Promise<any> {
+		if (this.gotClimateData()) {
+			return Promise.resolve(this.climateData);
+		} else {
+			return this.firstClimatePoll as Promise<any>;
+		}
+	}
+
+	private onError(err: unknown): void {
+		setTimeout(() => this.engage(), this.errorTimeout);
+		this.log.error(`Verisure request failed: ${JSON.stringify(err)}`);
+	}
+
+	private engage(): void {
+		this.firstAlarmPoll = this.authenticate().then(() => this.pollAlarmStatus());
+		this.firstClimatePoll = (this.firstAlarmPoll as Promise<any>)
+			.then(() => this.pollClimateData())
+			.catch((err) => this.onError(err));
+	}
+}
 	// If you need to accept messages in your adapter, uncomment the following block and the corresponding line in the constructor.
 	// /**
 	//  * Some message was sent to this instance over message box. Used by email, pushover, text2speech, ...
