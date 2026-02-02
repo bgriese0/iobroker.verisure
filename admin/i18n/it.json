@@ -1,5 +1,6 @@
 {
 	"verisure adapter settings": "Impostazioni dell'adattatore per verisure",
-	"option1": "opzione1",
-	"option2": "opzione2"
+	"username": "Nome utente",
+	"password": "Password",
+	"domain": "Dominio"
 }

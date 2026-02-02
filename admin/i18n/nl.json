@@ -1,5 +1,6 @@
 {
 	"verisure adapter settings": "Adapterinstellingen voor verisure",
-	"option1": "optie1",
-	"option2": "optie2"
+	"username": "Gebruikersnaam",
+	"password": "Wachtwoord",
+	"domain": "Domein"
 }

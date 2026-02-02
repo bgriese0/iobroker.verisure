@@ -1,5 +1,6 @@
 {
 	"verisure adapter settings": "Adapter settings for verisure",
-	"option1": "option1",
-	"option2": "option2"
+	"username": "username",
+	"password": "password",
+	"domain": "domain"
 }
