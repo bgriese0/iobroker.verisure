@@ -37,6 +37,11 @@ module.exports = __toCommonJS(verisure_client_exports);
 var import_axios = __toESM(require("axios"));
 class GraphqlError extends Error {
   errors;
+  /**
+   * Constructor for GraphqlError
+   *
+   * @param errors - Array of GraphQL errors
+   */
   constructor(errors) {
     super();
     this.name = "GraphqlException";
@@ -49,12 +54,25 @@ class VerisureInstallation {
   locale;
   config;
   baseClient;
+  /**
+   * Constructor for VerisureInstallation
+   *
+   * @param installation - Installation configuration object
+   * @param client - Client function for making requests
+   */
   constructor(installation, client) {
     this.giid = installation.giid;
     this.locale = installation.locale;
     this.config = installation;
     this.baseClient = client;
   }
+  /**
+   * Make a client request with installation-specific context
+   *
+   * @param options - Request options
+   * @param options.variables - Optional variables to include in the request
+   * @returns Promise resolving to the response
+   */
   client(options) {
     const { variables, ...otherOptions } = options;
     return this.baseClient({
@@ -73,6 +91,13 @@ class Verisure {
   password;
   cookies;
   promises;
+  /**
+   * Constructor for Verisure client
+   *
+   * @param email - User email address
+   * @param password - User password
+   * @param cookies - Optional array of cookies for authentication
+   */
   constructor(email, password, cookies = []) {
     [this.host] = HOSTS;
     this.email = email;
@@ -80,9 +105,17 @@ class Verisure {
     this.promises = {};
     this.cookies = cookies;
   }
+  /**
+   * Make a request to the Verisure API
+   *
+   * @param options - Axios request options
+   * @param changeHost - Whether to change to the alternate host
+   * @returns Promise resolving to the axios response
+   */
   async makeRequest(options, changeHost = false) {
     if (changeHost) {
-      this.host = HOSTS[+!HOSTS.indexOf(this.host)];
+      const currentIndex = HOSTS.indexOf(this.host);
+      this.host = HOSTS[(currentIndex + 1) % HOSTS.length];
     }
     const request = {
       ...options,
@@ -118,6 +151,9 @@ class Verisure {
       throw error;
     }
   }
+  /**
+   * Refresh authentication cookies
+   */
   async refreshCookies() {
     const { headers } = await this.makeRequest({
       method: "get",
@@ -126,19 +162,36 @@ class Verisure {
     });
     this.setCookies(headers["set-cookie"]);
   }
+  /**
+   * Set cookies for authentication
+   *
+   * @param cookies - Array of cookie strings
+   */
   setCookies(cookies) {
     this.cookies = cookies ? cookies.map((cookie) => cookie.split(";")[0]) : [];
   }
+  /**
+   * Get a cookie by prefix
+   *
+   * @param prefix - Cookie name prefix
+   * @returns Cookie string or undefined
+   */
   getCookie(prefix) {
     return this.cookies.find((cookie) => cookie.startsWith(prefix));
   }
+  /**
+   * Make a GraphQL client request
+   *
+   * @param request - GraphQL request object
+   * @returns Promise resolving to the response data
+   */
   client(request) {
     const requestRef = JSON.stringify(request);
-    let promise = this.promises[requestRef];
-    if (promise) {
+    const promise = this.promises[requestRef];
+    if (promise !== void 0) {
       return promise;
     }
-    promise = this.makeRequest({
+    const newPromise = this.makeRequest({
       method: "post",
       url: "/graphql",
       data: request
@@ -147,11 +200,17 @@ class Verisure {
       return data;
     }).catch((error) => {
       delete this.promises[requestRef];
-      return Promise.reject(error);
+      throw error;
     });
-    this.promises[requestRef] = promise;
-    return promise;
+    this.promises[requestRef] = newPromise;
+    return newPromise;
   }
+  /**
+   * Get authentication token and cookies
+   *
+   * @param code - Optional MFA code
+   * @returns Promise resolving to array of cookies
+   */
   async getToken(code) {
     let authRequest = {
       method: "post",
@@ -172,7 +231,8 @@ class Verisure {
     }
     const { headers } = await this.makeRequest(authRequest);
     this.setCookies(headers["set-cookie"]);
-    if (this.getCookie("vs-stepup")) {
+    const vsStepupCookie = this.getCookie("vs-stepup");
+    if (vsStepupCookie) {
       await this.makeRequest({
         method: "post",
         url: "/auth/mfa"
@@ -180,6 +240,11 @@ class Verisure {
     }
     return this.cookies;
   }
+  /**
+   * Get all installations for the authenticated user
+   *
+   * @returns Promise resolving to array of VerisureInstallation objects
+   */
   async getInstallations() {
     const {
       account: { installations }
@@ -208,9 +273,7 @@ class Verisure {
         }
       }`
     });
-    return installations.map(
-      (installation) => new VerisureInstallation(installation, this.client.bind(this))
-    );
+    return installations.map((installation) => new VerisureInstallation(installation, this.client.bind(this)));
   }
 }
 var verisure_client_default = Verisure;

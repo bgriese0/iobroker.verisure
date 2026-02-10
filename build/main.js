@@ -184,7 +184,9 @@ class Verisure extends utils.Adapter {
     return this.requestPromise({ url: climatedataUrl, json: true });
   }
   parseAlarmData(data) {
-    if (!Array.isArray(data) || data.length === 0) return Promise.resolve(data);
+    if (!Array.isArray(data) || data.length === 0) {
+      return Promise.resolve(data);
+    }
     const filtered = this.filterByKeys(data[0], this.verisureConfig.alarmFields);
     setTimeout(() => this.pollAlarmStatus(), this.alarmFetchTimeout);
     if (JSON.stringify(filtered) !== JSON.stringify(this.alarmStatus)) {
@@ -194,7 +196,9 @@ class Verisure extends utils.Adapter {
     return Promise.resolve(filtered);
   }
   parseClimateData(data) {
-    if (!Array.isArray(data)) return Promise.resolve(data);
+    if (!Array.isArray(data)) {
+      return Promise.resolve(data);
+    }
     const filtered = data.map(
       (set) => this.filterByKeys(set, this.verisureConfig.climateFields)
     );
@@ -220,16 +224,14 @@ class Verisure extends utils.Adapter {
   getAlarmStatus() {
     if (this.gotAlarmStatus()) {
       return Promise.resolve(this.alarmStatus);
-    } else {
-      return this.firstAlarmPoll;
     }
+    return this.firstAlarmPoll;
   }
   getClimateData() {
     if (this.gotClimateData()) {
       return Promise.resolve(this.climateData);
-    } else {
-      return this.firstClimatePoll;
     }
+    return this.firstClimatePoll;
   }
   onError(err) {
     setTimeout(() => this.engage(), this.errorTimeout);
@@ -244,7 +246,7 @@ class Verisure extends utils.Adapter {
   //  * Some message was sent to this instance over message box. Used by email, pushover, text2speech, ...
   //  * Using this method requires "common.messagebox" property to be set to true in io-package.json
   //  */
-  // 
+  //
   // private onMessage(obj: ioBroker.Message): void {
   // 	if (typeof obj === 'object' && obj.message) {
   // 		if (obj.command === 'send') {

@@ -108,7 +108,9 @@ export class Verisure {
 		changeHost = false,
 	): Promise<AxiosResponse> {
 		if (changeHost) {
-			this.host = HOSTS[+!HOSTS.indexOf(this.host)];
+			// Toggle between the two hosts for high availability
+			const currentIndex = HOSTS.indexOf(this.host);
+			this.host = HOSTS[(currentIndex + 1) % HOSTS.length];
 		}
 
 		const request: AxiosRequestConfig = {
