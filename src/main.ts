@@ -25,7 +25,7 @@ class Verisure extends utils.Adapter {
 	private formData: Record<string, string> = {};
 	private authenticated = false;
 	private alarmStatus: Record<string, unknown> = {};
-	private climateData: Array<Record<string, unknown>> = []; 
+	private climateData: Array<Record<string, unknown>> = [];
 	private firstAlarmPoll?: Promise<unknown>;
 	private firstClimatePoll?: Promise<unknown>;
 	private alarmFetchTimeout = 30 * 1000;
@@ -64,7 +64,9 @@ class Verisure extends utils.Adapter {
 				domain: 'https://mypages.verisure.com',
 				installationId: '',
 				auth_path: '/j_spring_security_check?locale=sv_SE',
-				alarmstatus_path: '/remotecontrol?_=',[object Object]
+				alarmstatus_path: '/remotecontrol?_=',
+				climatedata_path: '/overview/climatedevice?_=',
+				alarmFields: ['type', 'statusType', 'date', 'name', 'changedVia'],
 				climateFields: ['location', 'humidity', 'temperature', 'timestamp'],
 			},
 			{
@@ -163,11 +165,7 @@ class Verisure extends utils.Adapter {
 	private requestPromise(options: request.UriOptions & request.CoreOptions): Promise<any> {
 		return new Promise((resolve, reject) => {
 			request(options, (error, response, body) => {
-				if (
-					options.json &&
-					response &&
-					response.headers['content-type'] !== 'application/json;charset=UTF-8'
-				) {
+				if (options.json && response && response.headers['content-type'] !== 'application/json;charset=UTF-8') {
 					error = { state: 'error', message: 'Expected JSON, but got html' } as any;
 				} else if (body && body.state === 'error') {
 					error = body;
@@ -196,30 +194,32 @@ class Verisure extends utils.Adapter {
 
 	private fetchAlarmStatus(): Promise<any> {
 		let alarmstatusUrl = this.verisureConfig.domain;
-		
+
 		// If installationId is provided, include it in the URL path
 		if (this.verisureConfig.installationId) {
 			alarmstatusUrl += `/installation/${this.verisureConfig.installationId}`;
 		}
-		
+
 		alarmstatusUrl += this.verisureConfig.alarmstatus_path + Date.now();
 		return this.requestPromise({ url: alarmstatusUrl, json: true });
 	}
 
 	private fetchClimateData(): Promise<any> {
 		let climatedataUrl = this.verisureConfig.domain;
-		
+
 		// If installationId is provided, include it in the URL path
 		if (this.verisureConfig.installationId) {
 			climatedataUrl += `/installation/${this.verisureConfig.installationId}`;
 		}
-		
+
 		climatedataUrl += this.verisureConfig.climatedata_path + Date.now();
 		return this.requestPromise({ url: climatedataUrl, json: true });
 	}
 
 	private parseAlarmData(data: any): Promise<any> {
-		if (!Array.isArray(data) || data.length === 0) return Promise.resolve(data);
+		if (!Array.isArray(data) || data.length === 0) {
+			return Promise.resolve(data);
+		}
 		const filtered = this.filterByKeys(data[0], this.verisureConfig.alarmFields);
 
 		setTimeout(() => this.pollAlarmStatus(), this.alarmFetchTimeout);
@@ -232,7 +232,9 @@ class Verisure extends utils.Adapter {
 	}
 
 	private parseClimateData(data: any): Promise<any> {
-		if (!Array.isArray(data)) return Promise.resolve(data);
+		if (!Array.isArray(data)) {
+			return Promise.resolve(data);
+		}
 		const filtered = data.map((set: Record<string, unknown>) =>
 			this.filterByKeys(set, this.verisureConfig.climateFields),
 		);
@@ -247,11 +249,11 @@ class Verisure extends utils.Adapter {
 	}
 
 	private pollAlarmStatus(): Promise<any> {
-		return this.fetchAlarmStatus().then((data) => this.parseAlarmData(data));
+		return this.fetchAlarmStatus().then(data => this.parseAlarmData(data));
 	}
 
 	private pollClimateData(): Promise<any> {
-		return this.fetchClimateData().then((data) => this.parseClimateData(data));
+		return this.fetchClimateData().then(data => this.parseClimateData(data));
 	}
 
 	private gotAlarmStatus(): boolean {
@@ -265,17 +267,15 @@ class Verisure extends utils.Adapter {
 	private getAlarmStatus(): Promise<any> {
 		if (this.gotAlarmStatus()) {
 			return Promise.resolve(this.alarmStatus);
-		} else {
-			return this.firstAlarmPoll as Promise<any>;
 		}
+		return this.firstAlarmPoll as Promise<any>;
 	}
 
 	private getClimateData(): Promise<any> {
 		if (this.gotClimateData()) {
 			return Promise.resolve(this.climateData);
-		} else {
-			return this.firstClimatePoll as Promise<any>;
 		}
+		return this.firstClimatePoll as Promise<any>;
 	}
 
 	private onError(err: unknown): void {
@@ -287,7 +287,7 @@ class Verisure extends utils.Adapter {
 		this.firstAlarmPoll = this.authenticate().then(() => this.pollAlarmStatus());
 		this.firstClimatePoll = (this.firstAlarmPoll as Promise<any>)
 			.then(() => this.pollClimateData())
-			.catch((err) => this.onError(err));
+			.catch(err => this.onError(err));
 	}
 
 	// If you need to accept messages in your adapter, uncomment the following block and the corresponding line in the constructor.
@@ -295,7 +295,7 @@ class Verisure extends utils.Adapter {
 	//  * Some message was sent to this instance over message box. Used by email, pushover, text2speech, ...
 	//  * Using this method requires "common.messagebox" property to be set to true in io-package.json
 	//  */
-	// 
+	//
 	// private onMessage(obj: ioBroker.Message): void {
 	// 	if (typeof obj === 'object' && obj.message) {
 	// 		if (obj.command === 'send') {

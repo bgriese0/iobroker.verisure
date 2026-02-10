@@ -22,7 +22,24 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 var utils = __toESM(require("@iobroker/adapter-core"));
+var import_request = __toESM(require("request"));
+var import_object_assign = __toESM(require("object-assign"));
+var import_auto = require("es6-promise/auto");
 class Verisure extends utils.Adapter {
+  verisureConfig;
+  formData = {};
+  authenticated = false;
+  alarmStatus = {};
+  climateData = [];
+  firstAlarmPoll;
+  firstClimatePoll;
+  alarmFetchTimeout = 30 * 1e3;
+  climateFetchTimeout = 30 * 60 * 1e3;
+  errorTimeout = 10 * 60 * 1e3;
+  listeners = {
+    climateChange: [],
+    alarmChange: []
+  };
   constructor(options = {}) {
     super({
       ...options,
@@ -36,27 +53,35 @@ class Verisure extends utils.Adapter {
    * Is called when databases are connected and adapter received configuration.
    */
   async onReady() {
-    this.log.debug("config option1: ${this.config.option1}");
-    this.log.debug("config option2: ${this.config.option2}");
-    await this.setObjectNotExistsAsync("testVariable", {
-      type: "state",
-      common: {
-        name: "testVariable",
-        type: "boolean",
-        role: "indicator",
-        read: true,
-        write: true
+    if (!this.config.username || !this.config.password) {
+      this.log.error("Username and password are required for Verisure API");
+      return;
+    }
+    this.verisureConfig = (0, import_object_assign.default)(
+      {
+        username: "",
+        password: "",
+        domain: "https://mypages.verisure.com",
+        installationId: "",
+        auth_path: "/j_spring_security_check?locale=sv_SE",
+        alarmstatus_path: "/remotecontrol?_=",
+        climatedata_path: "/overview/climatedevice?_=",
+        alarmFields: ["type", "statusType", "date", "name", "changedVia"],
+        climateFields: ["location", "humidity", "temperature", "timestamp"]
       },
-      native: {}
-    });
-    this.subscribeStates("testVariable");
-    await this.setState("testVariable", true);
-    await this.setState("testVariable", { val: true, ack: true });
-    await this.setState("testVariable", { val: true, ack: true, expire: 30 });
-    const pwdResult = await this.checkPasswordAsync("admin", "iobroker");
-    this.log.info(`check user admin pw iobroker: ${JSON.stringify(pwdResult)}`);
-    const groupResult = await this.checkGroupAsync("admin", "admin");
-    this.log.info(`check group user admin group admin: ${JSON.stringify(groupResult)}`);
+      {
+        username: this.config.username,
+        password: this.config.password,
+        domain: this.config.domain || "https://mypages.verisure.com",
+        installationId: this.config.installationId || ""
+      }
+    );
+    this.formData = {
+      j_username: this.verisureConfig.username,
+      j_password: this.verisureConfig.password
+    };
+    import_request.default = import_request.default.defaults({ jar: true });
+    this.engage();
   }
   /**
    * Is called when adapter shuts down - callback has to be called under any circumstances!
@@ -100,6 +125,121 @@ class Verisure extends utils.Adapter {
     } else {
       this.log.info(`state ${id} deleted`);
     }
+  }
+  filterByKeys(obj, keysArr) {
+    const filtered = {};
+    for (const key of Object.keys(obj)) {
+      if (keysArr.includes(key)) {
+        filtered[key] = obj[key];
+      }
+    }
+    return filtered;
+  }
+  dispatch(service, data) {
+    for (const listener of this.listeners[service]) {
+      listener(data);
+    }
+  }
+  requestPromise(options) {
+    return new Promise((resolve, reject) => {
+      (0, import_request.default)(options, (error, response, body) => {
+        if (options.json && response && response.headers["content-type"] !== "application/json;charset=UTF-8") {
+          error = { state: "error", message: "Expected JSON, but got html" };
+        } else if (body && body.state === "error") {
+          error = body;
+          this.authenticated = false;
+        }
+        if (error) {
+          reject(error);
+        } else {
+          this.authenticated = true;
+          resolve(body);
+        }
+      });
+    });
+  }
+  authenticate() {
+    const authUrl = this.verisureConfig.domain + this.verisureConfig.auth_path;
+    const requestParams = {
+      url: authUrl,
+      form: this.formData,
+      method: "POST"
+    };
+    return this.authenticated ? Promise.resolve(true) : this.requestPromise(requestParams);
+  }
+  fetchAlarmStatus() {
+    let alarmstatusUrl = this.verisureConfig.domain;
+    if (this.verisureConfig.installationId) {
+      alarmstatusUrl += `/installation/${this.verisureConfig.installationId}`;
+    }
+    alarmstatusUrl += this.verisureConfig.alarmstatus_path + Date.now();
+    return this.requestPromise({ url: alarmstatusUrl, json: true });
+  }
+  fetchClimateData() {
+    let climatedataUrl = this.verisureConfig.domain;
+    if (this.verisureConfig.installationId) {
+      climatedataUrl += `/installation/${this.verisureConfig.installationId}`;
+    }
+    climatedataUrl += this.verisureConfig.climatedata_path + Date.now();
+    return this.requestPromise({ url: climatedataUrl, json: true });
+  }
+  parseAlarmData(data) {
+    if (!Array.isArray(data) || data.length === 0) {
+      return Promise.resolve(data);
+    }
+    const filtered = this.filterByKeys(data[0], this.verisureConfig.alarmFields);
+    setTimeout(() => this.pollAlarmStatus(), this.alarmFetchTimeout);
+    if (JSON.stringify(filtered) !== JSON.stringify(this.alarmStatus)) {
+      this.alarmStatus = filtered;
+      this.dispatch("alarmChange", filtered);
+    }
+    return Promise.resolve(filtered);
+  }
+  parseClimateData(data) {
+    if (!Array.isArray(data)) {
+      return Promise.resolve(data);
+    }
+    const filtered = data.map(
+      (set) => this.filterByKeys(set, this.verisureConfig.climateFields)
+    );
+    setTimeout(() => this.pollClimateData(), this.climateFetchTimeout);
+    if (JSON.stringify(filtered) !== JSON.stringify(this.climateData)) {
+      this.climateData = filtered;
+      this.dispatch("climateChange", filtered);
+    }
+    return Promise.resolve(filtered);
+  }
+  pollAlarmStatus() {
+    return this.fetchAlarmStatus().then((data) => this.parseAlarmData(data));
+  }
+  pollClimateData() {
+    return this.fetchClimateData().then((data) => this.parseClimateData(data));
+  }
+  gotAlarmStatus() {
+    return Object.keys(this.alarmStatus).length !== 0;
+  }
+  gotClimateData() {
+    return Object.keys(this.climateData).length !== 0;
+  }
+  getAlarmStatus() {
+    if (this.gotAlarmStatus()) {
+      return Promise.resolve(this.alarmStatus);
+    }
+    return this.firstAlarmPoll;
+  }
+  getClimateData() {
+    if (this.gotClimateData()) {
+      return Promise.resolve(this.climateData);
+    }
+    return this.firstClimatePoll;
+  }
+  onError(err) {
+    setTimeout(() => this.engage(), this.errorTimeout);
+    this.log.error(`Verisure request failed: ${JSON.stringify(err)}`);
+  }
+  engage() {
+    this.firstAlarmPoll = this.authenticate().then(() => this.pollAlarmStatus());
+    this.firstClimatePoll = this.firstAlarmPoll.then(() => this.pollClimateData()).catch((err) => this.onError(err));
   }
   // If you need to accept messages in your adapter, uncomment the following block and the corresponding line in the constructor.
   // /**
