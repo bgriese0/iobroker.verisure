@@ -15,6 +15,7 @@ class Verisure extends utils.Adapter {
 		username: string;
 		password: string;
 		domain: string;
+		installationId: string;
 		auth_path: string;
 		alarmstatus_path: string;
 		climatedata_path: string;
@@ -24,7 +25,7 @@ class Verisure extends utils.Adapter {
 	private formData: Record<string, string> = {};
 	private authenticated = false;
 	private alarmStatus: Record<string, unknown> = {};
-	private climateData: Array<Record<string, unknown>> = [];
+	private climateData: Array<Record<string, unknown>> = []; 
 	private firstAlarmPoll?: Promise<unknown>;
 	private firstClimatePoll?: Promise<unknown>;
 	private alarmFetchTimeout = 30 * 1000;
@@ -61,16 +62,16 @@ class Verisure extends utils.Adapter {
 				username: '',
 				password: '',
 				domain: 'https://mypages.verisure.com',
+				installationId: '',
 				auth_path: '/j_spring_security_check?locale=sv_SE',
-				alarmstatus_path: '/remotecontrol?_=',
-				climatedata_path: '/overview/climatedevice?_=',
-				alarmFields: ['status', 'date'],
+				alarmstatus_path: '/remotecontrol?_=',[object Object]
 				climateFields: ['location', 'humidity', 'temperature', 'timestamp'],
 			},
 			{
 				username: this.config.username,
 				password: this.config.password,
 				domain: this.config.domain || 'https://mypages.verisure.com',
+				installationId: this.config.installationId || '',
 			},
 		);
 
@@ -140,6 +141,7 @@ class Verisure extends utils.Adapter {
 		} else {
 			// The object was deleted or the state value has expired
 			this.log.info(`state ${id} deleted`);
+		}
 	}
 
 	private filterByKeys(obj: Record<string, unknown>, keysArr: string[]): Record<string, unknown> {
@@ -193,12 +195,26 @@ class Verisure extends utils.Adapter {
 	}
 
 	private fetchAlarmStatus(): Promise<any> {
-		const alarmstatusUrl = this.verisureConfig.domain + this.verisureConfig.alarmstatus_path + Date.now();
+		let alarmstatusUrl = this.verisureConfig.domain;
+		
+		// If installationId is provided, include it in the URL path
+		if (this.verisureConfig.installationId) {
+			alarmstatusUrl += `/installation/${this.verisureConfig.installationId}`;
+		}
+		
+		alarmstatusUrl += this.verisureConfig.alarmstatus_path + Date.now();
 		return this.requestPromise({ url: alarmstatusUrl, json: true });
 	}
 
 	private fetchClimateData(): Promise<any> {
-		const climatedataUrl = this.verisureConfig.domain + this.verisureConfig.climatedata_path + Date.now();
+		let climatedataUrl = this.verisureConfig.domain;
+		
+		// If installationId is provided, include it in the URL path
+		if (this.verisureConfig.installationId) {
+			climatedataUrl += `/installation/${this.verisureConfig.installationId}`;
+		}
+		
+		climatedataUrl += this.verisureConfig.climatedata_path + Date.now();
 		return this.requestPromise({ url: climatedataUrl, json: true });
 	}
 
@@ -273,13 +289,13 @@ class Verisure extends utils.Adapter {
 			.then(() => this.pollClimateData())
 			.catch((err) => this.onError(err));
 	}
-}
+
 	// If you need to accept messages in your adapter, uncomment the following block and the corresponding line in the constructor.
 	// /**
 	//  * Some message was sent to this instance over message box. Used by email, pushover, text2speech, ...
 	//  * Using this method requires "common.messagebox" property to be set to true in io-package.json
 	//  */
-	//
+	// 
 	// private onMessage(obj: ioBroker.Message): void {
 	// 	if (typeof obj === 'object' && obj.message) {
 	// 		if (obj.command === 'send') {
@@ -291,6 +307,7 @@ class Verisure extends utils.Adapter {
 	// 	}
 	// }
 }
+
 if (require.main !== module) {
 	// Export the constructor in compact mode
 	module.exports = (options: Partial<utils.AdapterOptions> | undefined) => new Verisure(options);
